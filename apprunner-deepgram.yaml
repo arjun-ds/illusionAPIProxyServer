@@ -1,0 +1,19 @@
+version: 1.0
+runtime: python310
+build:
+  commands:
+    build:
+      - pip install -r requirements-deepgram.txt
+run:
+  runtime-version: 3.10.8
+  command: python deepgram_app.py
+  network:
+    port: 8000
+    env: PORT
+  env:
+    - name: DEEPGRAM_API_KEY
+      value: ${DEEPGRAM_API_KEY}
+    - name: PORT
+      value: 8000
+    - name: LOG_LEVEL
+      value: INFO

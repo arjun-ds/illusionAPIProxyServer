@@ -1,0 +1,17 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements-elevenlabs.txt .
+RUN pip install --no-cache-dir -r requirements-elevenlabs.txt
+
+# Copy the application files
+COPY elevenlabs_app.py .
+COPY .env* ./
+
+# Make port available to the outside world
+EXPOSE 8001
+
+# Command to run the application
+CMD ["python", "elevenlabs_app.py"]

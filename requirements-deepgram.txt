@@ -1,0 +1,5 @@
+deepgram-sdk==4.1.0
+fastapi==0.115.12
+websockets==15.0.1
+uvicorn==0.34.2
+python-dotenv==1.1.0

@@ -1,0 +1,19 @@
+version: 1.0
+runtime: python310
+build:
+  commands:
+    build:
+      - pip install -r requirements-elevenlabs.txt
+run:
+  runtime-version: 3.10.8
+  command: python elevenlabs_app.py
+  network:
+    port: 8001
+    env: PORT
+  env:
+    - name: ELEVENLABS_API_KEY
+      value: ${ELEVENLABS_API_KEY}
+    - name: PORT
+      value: 8001
+    - name: LOG_LEVEL
+      value: INFO
