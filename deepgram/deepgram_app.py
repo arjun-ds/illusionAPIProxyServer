@@ -12,7 +12,7 @@ from pydantic import BaseModel
 import boto3
 from botocore.exceptions import ClientError
 
-from deepgram import Deepgram, DeepgramClient
+from deepgram import Deepgram
 
 from dotenv import load_dotenv
 
@@ -106,29 +106,31 @@ if DEEPGRAM_API_KEY.startswith("arn:aws:secretsmanager:"):
         logger.error(f"Failed to retrieve secret from AWS Secrets Manager: {e}")
         raise
 
-# Initialize Deepgram client - try both initialization methods
+# Initialize Deepgram client
 logger.info("Initializing Deepgram client...")
-deepgram = None
 try:
-    # Try the new SDK v2.x initialization method first
-    deepgram = DeepgramClient(DEEPGRAM_API_KEY)
-    logger.info("Deepgram client initialized successfully using DeepgramClient")
-except Exception as e1:
-    logger.warning(f"Failed with DeepgramClient: {e1}")
-    try:
-        # Fall back to legacy initialization
-        deepgram = Deepgram(DEEPGRAM_API_KEY)
-        logger.info("Deepgram client initialized successfully using legacy Deepgram class")
-    except Exception as e2:
-        logger.error(f"Failed to initialize Deepgram client with both methods")
-        logger.error(f"DeepgramClient error: {e1}")
-        logger.error(f"Legacy Deepgram error: {e2}")
-        logger.error(f"API key length: {len(DEEPGRAM_API_KEY)}")
-        logger.error(f"API key type: {type(DEEPGRAM_API_KEY)}")
-        # Check if the API key looks like a valid Deepgram key
-        if not DEEPGRAM_API_KEY.startswith(('DG.', 'dg.', 'sk_', 'pk_')):
-            logger.error("API key does not start with expected Deepgram prefix (DG., dg., sk_, or pk_)")
-        raise e2
+    # Strip any extra whitespace and ensure string type
+    api_key = str(DEEPGRAM_API_KEY).strip()
+    logger.info(f"API key length after strip: {len(api_key)}")
+    logger.info(f"API key first 10 chars: {api_key[:10]}...")
+    
+    deepgram = Deepgram(api_key)
+    logger.info("Deepgram client initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize Deepgram client: {e}")
+    logger.error(f"Error type: {type(e).__name__}")
+    logger.error(f"API key length: {len(DEEPGRAM_API_KEY)}")
+    logger.error(f"API key type: {type(DEEPGRAM_API_KEY)}")
+    
+    # Check if the API key looks like a valid Deepgram key
+    if not DEEPGRAM_API_KEY.startswith(('DG.', 'dg.', 'sk_', 'pk_')):
+        logger.error("API key does not start with expected Deepgram prefix (DG., dg., sk_, or pk_)")
+    
+    # Try to give more specific error info
+    if "Invalid API key" in str(e):
+        logger.error("Deepgram SDK reports invalid API key - check if key is correct in AWS Secrets Manager")
+    
+    raise
 
 # Store active websocket connections
 active_connections: Dict[str, WebSocket] = {}
