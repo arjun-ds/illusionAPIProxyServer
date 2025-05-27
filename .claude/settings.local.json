@@ -10,7 +10,8 @@
       "Bash(grep:*)",
       "Bash(cat:*)",
       "Bash(mkdir:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

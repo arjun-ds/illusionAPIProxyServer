@@ -5,6 +5,7 @@ build:
     build:
       - pip install -r requirements.txt
 run:
+  runtime-version: 3.8.16
   command: python3 -m uvicorn deepgram_app:app --host 0.0.0.0 --port 8000
   network:
     port: 8000
