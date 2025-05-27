@@ -9,10 +9,8 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import boto3
-from botocore.exceptions import ClientError
 
-from deepgram import Deepgram
+from deepgram import DeepgramClient
 
 from dotenv import load_dotenv
 
@@ -38,79 +36,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def get_secret_value(secret_name_or_arn: str) -> str:
-    """Retrieve secret from AWS Secrets Manager"""
-    try:
-        # Extract region from ARN or use default
-        region_name = "us-west-2"  # Default region
-        if secret_name_or_arn.startswith("arn:aws:secretsmanager:"):
-            # Extract region from ARN: arn:aws:secretsmanager:REGION:...
-            region_name = secret_name_or_arn.split(":")[3]
-        
-        # Create a Secrets Manager client with explicit region
-        session = boto3.session.Session()
-        client = session.client(
-            service_name='secretsmanager',
-            region_name=region_name
-        )
-        
-        response = client.get_secret_value(SecretId=secret_name_or_arn)
-        secret_string = response['SecretString']
-        
-        # Try to parse as JSON first
-        try:
-            secret_data = json.loads(secret_string)
-            logger.info(f"Secret is JSON with keys: {list(secret_data.keys())}")
-            
-            # Try different possible key names
-            possible_keys = ['DEEPGRAM_API_KEY', 'deepgram_api_key', 'api_key', 'deepgram']
-            for key in possible_keys:
-                if key in secret_data:
-                    logger.info(f"Found key '{key}' in secret")
-                    # Strip any whitespace from the API key
-                    api_key = secret_data[key].strip()
-                    return api_key
-            
-            # If no specific key found, log all keys and return the first value
-            if len(secret_data) == 1:
-                first_key = list(secret_data.keys())[0]
-                logger.info(f"Using first key '{first_key}' from secret")
-                return list(secret_data.values())[0]
-                
-            logger.error(f"Available keys in secret: {list(secret_data.keys())}")
-            raise ValueError(f"Could not find DEEPGRAM_API_KEY in secret {secret_name_or_arn}")
-            
-        except json.JSONDecodeError:
-            # If it's not JSON, return the raw secret string
-            logger.info("Secret is not JSON, returning raw string")
-            return secret_string
-        
-    except ClientError as e:
-        logger.error(f"Error retrieving secret {secret_name_or_arn}: {e}")
-        raise
-
-# Get the Deepgram API key from environment variables
+# Get the Deepgram API key from environment variables (simplified like ElevenLabs)
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 if not DEEPGRAM_API_KEY:
     raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
 
-# Check if the value is an AWS Secrets Manager ARN
-if DEEPGRAM_API_KEY.startswith("arn:aws:secretsmanager:"):
-    print(f"DEEPGRAM DEBUG: Detected AWS Secrets Manager ARN")
-    logger.info(f"Detected AWS Secrets Manager ARN: {DEEPGRAM_API_KEY}")
-    try:
-        DEEPGRAM_API_KEY = get_secret_value(DEEPGRAM_API_KEY)
-        print(f"DEEPGRAM DEBUG: Retrieved key length={len(DEEPGRAM_API_KEY)}, type={type(DEEPGRAM_API_KEY)}")
-        logger.info(f"Retrieved key: length={len(DEEPGRAM_API_KEY)}, type={type(DEEPGRAM_API_KEY)}")
-    except Exception as e:
-        print(f"DEEPGRAM DEBUG: Failed to retrieve secret: {e}")
-        logger.error(f"Failed to retrieve secret from AWS Secrets Manager: {e}")
-        raise
-
-# Initialize Deepgram client
+# Initialize Deepgram client using v2.x SDK pattern
 print(f"DEEPGRAM DEBUG: Initializing Deepgram client...")
 try:
-    deepgram = Deepgram(DEEPGRAM_API_KEY)
+    deepgram = DeepgramClient(DEEPGRAM_API_KEY)
     print(f"DEEPGRAM DEBUG: Deepgram client initialized successfully")
 except Exception as e:
     print(f"DEEPGRAM DEBUG: Failed to initialize Deepgram: {e}")
@@ -160,8 +94,11 @@ async def websocket_endpoint(websocket: WebSocket):
         options.sample_rate = 44100
         options.channels = 1
         
-        # Create WebSocket connection to Deepgram
-        deepgram_socket = await deepgram.transcription.live({
+        # Create WebSocket connection to Deepgram using v2.x SDK
+        deepgram_socket = deepgram.listen.websocket.v("1")
+        
+        # Configure the connection
+        deepgram_options = {
             'language': options.language,
             'model': options.model,
             'smart_format': options.smart_format,
@@ -172,19 +109,33 @@ async def websocket_endpoint(websocket: WebSocket):
             'channels': options.channels,
             'sample_rate': options.sample_rate,
             'utterances': options.utterances
-        })
+        }
+        
+        # Start the connection
+        if not deepgram_socket.start(deepgram_options):
+            logger.error("Failed to start Deepgram connection")
+            await websocket.send_text(json.dumps({"type": "error", "message": "Failed to connect to Deepgram"}))
+            return
         
         dg_connections[client_id] = deepgram_socket
         logger.info(f"Started Deepgram connection for client {client_id}")
         
-        # Handle incoming transcriptions from Deepgram in background
-        async def process_transcriptions():
-            async for message in deepgram_socket:
-                logger.debug(f"Received transcript from Deepgram: {json.dumps(message)}")
-                await websocket.send_text(json.dumps(message))
+        # Set up event handlers for Deepgram responses
+        def on_message(result, **kwargs):
+            logger.debug(f"Received transcript from Deepgram: {json.dumps(result)}")
+            asyncio.create_task(websocket.send_text(json.dumps(result)))
         
-        # Start processing transcriptions in background
-        transcription_task = asyncio.create_task(process_transcriptions())
+        def on_error(error, **kwargs):
+            logger.error(f"Deepgram error: {error}")
+            asyncio.create_task(websocket.send_text(json.dumps({"type": "error", "message": str(error)})))
+        
+        def on_close(close, **kwargs):
+            logger.info(f"Deepgram connection closed: {close}")
+        
+        # Register event handlers
+        deepgram_socket.on("Results", on_message)
+        deepgram_socket.on("Error", on_error)
+        deepgram_socket.on("Close", on_close)
         
         # Process incoming audio data
         try:
@@ -194,12 +145,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 deepgram_socket.send(data)
         except WebSocketDisconnect:
             logger.info(f"Client {client_id} disconnected")
-            transcription_task.cancel()
         finally:
             # Clean up Deepgram connection
             if client_id in dg_connections:
-                deepgram_socket.close()
-                await deepgram_socket.wait_closed()
+                deepgram_socket.finish()
                 del dg_connections[client_id]
                 logger.info(f"Closed Deepgram connection for client {client_id}")
     
@@ -214,7 +163,7 @@ async def websocket_endpoint(websocket: WebSocket):
             del active_connections[client_id]
         if client_id in dg_connections:
             try:
-                await dg_connections[client_id].finish()
+                dg_connections[client_id].finish()
             except:
                 pass
             del dg_connections[client_id]
