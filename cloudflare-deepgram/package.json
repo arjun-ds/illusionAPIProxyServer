@@ -1,0 +1,22 @@
+{
+  "name": "deepgram-websocket-proxy",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker WebSocket proxy for Deepgram API",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "logs": "wrangler tail"
+  },
+  "keywords": [
+    "deepgram",
+    "websocket",
+    "proxy",
+    "cloudflare-workers"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

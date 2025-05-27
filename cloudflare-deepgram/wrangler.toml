@@ -1,0 +1,10 @@
+name = "deepgram-proxy"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# Uncomment and set your account_id if needed
+# account_id = "your_account_id"
+
+# The secret will be set via wrangler secret command
+# [vars]
+# DEEPGRAM_API_KEY = "set via wrangler secret"
