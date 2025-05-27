@@ -9,6 +9,8 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import boto3
+from botocore.exceptions import ClientError
 
 from deepgram import Deepgram
 
@@ -36,10 +38,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def get_secret_value(secret_name_or_arn: str) -> str:
+    """Retrieve secret from AWS Secrets Manager"""
+    try:
+        session = boto3.Session()
+        client = session.client('secretsmanager')
+        
+        response = client.get_secret_value(SecretId=secret_name_or_arn)
+        secret_data = json.loads(response['SecretString'])
+        
+        # Try different possible key names
+        possible_keys = ['DEEPGRAM_API_KEY', 'deepgram_api_key', 'api_key']
+        for key in possible_keys:
+            if key in secret_data:
+                return secret_data[key]
+        
+        # If no specific key found, return the first value
+        if len(secret_data) == 1:
+            return list(secret_data.values())[0]
+            
+        raise ValueError(f"Could not find DEEPGRAM_API_KEY in secret {secret_name_or_arn}")
+        
+    except ClientError as e:
+        logger.error(f"Error retrieving secret {secret_name_or_arn}: {e}")
+        raise
+    except json.JSONDecodeError:
+        # If it's not JSON, return the raw secret string
+        return response['SecretString']
+
 # Get the Deepgram API key from environment variables
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 if not DEEPGRAM_API_KEY:
     raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
+
+# Check if the value is an AWS Secrets Manager ARN
+if DEEPGRAM_API_KEY.startswith("arn:aws:secretsmanager:"):
+    logger.info("Detected AWS Secrets Manager ARN, retrieving secret value")
+    DEEPGRAM_API_KEY = get_secret_value(DEEPGRAM_API_KEY)
+    
+logger.info("Successfully retrieved Deepgram API key")
 
 # Initialize Deepgram client
 deepgram = Deepgram(DEEPGRAM_API_KEY)

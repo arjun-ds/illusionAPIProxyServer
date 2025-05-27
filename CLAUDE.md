@@ -207,141 +207,63 @@ Your existing `index.js` code will work exactly as-is:
 
 ### Part 2: Deepgram Integration (Speech-to-Text)
 
-**This requires more changes to match the server's expected protocol.**
+**The proxy server is designed to be fully compatible with existing clients!**
 
-#### Current WebSocket Connection (what you probably have):
+#### What You Need to Change:
 ```javascript
-// OLD - typical WebSocket connection
-const ws = new WebSocket('ws://localhost:8000/ws/client1');
-
-ws.onopen = () => {
-    // Send configuration
-    ws.send(JSON.stringify({
-        language: "en-US",
-        model: "nova-2",
-        smart_format: true,
-        // ... other config
-    }));
-};
-```
-
-#### NEW - Required WebSocket Connection:
-```javascript
-// NEW - compatible with your proxy server
+// ONLY change the WebSocket URL:
 const ws = new WebSocket('wss://your-deepgram-proxy.awsapprunner.com/');
 
+// Everything else remains exactly the same:
 ws.onopen = () => {
-    // Send connection test (required!)
-    ws.send("CONNECT_TEST");
+    // Start streaming immediately - no handshake required
+    beginAudioCapture();
 };
 
 ws.onmessage = (event) => {
-    if (event.data === "CONNECTION_OK") {
-        // Now you can start streaming audio
-        console.log("Connected to Deepgram proxy");
-        // Start your audio streaming here
-        startAudioStreaming();
-    } else {
-        // Handle transcription results (same as before)
-        try {
-            const result = JSON.parse(event.data);
-            handleTranscriptionResult(result);
-        } catch (e) {
-            console.error("Failed to parse transcription result:", e);
-        }
-    }
+    // Standard Deepgram response format - unchanged
+    const result = JSON.parse(event.data);
+    handleTranscriptionResult(result);
 };
 
-// Audio streaming remains the same
-const startAudioStreaming = () => {
-    // Your existing audio streaming code
-    // Send binary audio data: ws.send(audioData);
+// Audio streaming - completely unchanged
+const sendAudioData = (audioBuffer) => {
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(audioBuffer); // Binary data
+    }
 };
 ```
 
-#### Detailed Deepgram Changes Required:
-
-1. **WebSocket URL Change**:
-   ```javascript
-   // OLD
-   const wsUrl = 'ws://localhost:8000/ws/client1';
-   
-   // NEW  
-   const wsUrl = 'wss://your-deepgram-proxy.awsapprunner.com/';
-   ```
-
-2. **Remove Configuration Sending**:
-   ```javascript
-   // REMOVE THIS - server uses hardcoded config
-   ws.send(JSON.stringify({
-       language: "en-US",
-       model: "nova-2", 
-       // ... other config
-   }));
-   ```
-
-3. **Add Connection Test**:
-   ```javascript
-   // ADD THIS - required handshake
-   ws.onopen = () => {
-       ws.send("CONNECT_TEST");
-   };
-   ```
-
-4. **Handle Connection Confirmation**:
-   ```javascript
-   // ADD THIS - wait for confirmation before streaming
-   ws.onmessage = (event) => {
-       if (event.data === "CONNECTION_OK") {
-           // Now start audio streaming
-           beginAudioCapture();
-       } else {
-           // Parse transcription results (unchanged)
-           const result = JSON.parse(event.data);
-           // Your existing result handling code
-       }
-   };
-   ```
-
-5. **Audio Streaming (Unchanged)**:
-   ```javascript
-   // This part stays exactly the same
-   const sendAudioData = (audioBuffer) => {
-       if (ws.readyState === WebSocket.OPEN) {
-           ws.send(audioBuffer); // Binary data
-       }
-   };
-   ```
+#### Server Configuration:
+The proxy server is pre-configured with optimal settings:
+- **Encoding**: linear16 (PCM 16-bit)
+- **Sample Rate**: 44100 Hz
+- **Channels**: 1 (mono)
+- **Model**: nova-2
+- **Language**: en-US
+- **Features**: punctuation, smart formatting, utterances enabled
 
 ### Summary of All Required Changes
 
-#### ElevenLabs (index.js or config file):
+Both services require **only URL changes** - all existing client code remains unchanged!
+
+#### ElevenLabs (Text-to-Speech):
 ```javascript
 // Change this ONE line:
 API_CONFIG.BASE_URL = "https://your-elevenlabs-proxy.awsapprunner.com"
 ```
 
-#### Deepgram (WebSocket client code):
+#### Deepgram (Speech-to-Text):
 ```javascript
-// 1. Update WebSocket URL
+// Change this ONE line:
 const ws = new WebSocket('wss://your-deepgram-proxy.awsapprunner.com/');
 
-// 2. Send connection test on open
-ws.onopen = () => {
-    ws.send("CONNECT_TEST");
-};
-
-// 3. Wait for confirmation before streaming
-ws.onmessage = (event) => {
-    if (event.data === "CONNECTION_OK") {
-        startAudioStreaming();
-    } else {
-        handleTranscriptionResult(JSON.parse(event.data));
-    }
-};
-
-// 4. Remove any configuration JSON sending
-// 5. Keep audio streaming code unchanged
+// Everything else remains exactly the same:
+// ✅ No connection handshake required
+// ✅ Start streaming audio immediately on connection  
+// ✅ Same JSON response format for transcriptions
+// ✅ Audio streaming code unchanged
+// ✅ Same error handling
 ```
 
 ### Testing Your Integration
@@ -370,12 +292,13 @@ ws.onmessage = (event) => {
 
 ## Implementation Status
 
-- ✅ **Deepgram Integration**: Real-time speech-to-text via WebSocket  
-- ✅ **ElevenLabs Integration**: Text-to-speech via REST API proxy
-- ✅ **AWS App Runner Compatible**: Two separate deployable services
+- ✅ **Deepgram Integration**: Real-time speech-to-text via WebSocket (v2.x SDK, Python 3.8 compatible)
+- ✅ **ElevenLabs Integration**: Text-to-speech via REST API proxy (Python 3.8 compatible)
+- ✅ **AWS App Runner Compatible**: Two separate deployable services using Python runtime
 - ✅ **Production Ready**: Error handling, logging, health checks, CORS
-- ✅ **Client Compatible**: Minimal changes required for existing React Native code
+- ✅ **Client Compatible**: **URL-only changes** - existing client code remains unchanged
 - ✅ **Cost Efficient**: Deploy only the services you need
+- ✅ **Swift/iOS Compatible**: Tested with iOS Swift WebSocket client implementation
 
 ## Security & Production Notes
 
