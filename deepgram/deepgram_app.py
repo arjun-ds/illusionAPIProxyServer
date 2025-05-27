@@ -10,12 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from deepgram import (
-    DeepgramClient,
-    LiveTranscriptionEvents,
-    LiveOptions,
-    Microphone,
-)
+from deepgram import Deepgram
 
 from dotenv import load_dotenv
 
@@ -47,7 +42,7 @@ if not DEEPGRAM_API_KEY:
     raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
 
 # Initialize Deepgram client
-deepgram = DeepgramClient(DEEPGRAM_API_KEY)
+deepgram = Deepgram(DEEPGRAM_API_KEY)
 
 # Store active websocket connections
 active_connections: Dict[str, WebSocket] = {}
@@ -85,72 +80,55 @@ async def websocket_endpoint(websocket: WebSocket):
     active_connections[client_id] = websocket
     
     try:
-        # Wait for the initial "CONNECT_TEST" message from client
-        first_message = await websocket.receive_text()
-        logger.info(f"First message received: {first_message}")
+        # Configure default Deepgram transcription options to match Swift client
+        options = TranscriptionOptions()
+        # Override to match client expectations
+        options.encoding = "linear16"
+        options.sample_rate = 44100
+        options.channels = 1
         
-        if first_message == "CONNECT_TEST":
-            # Send confirmation to client
-            await websocket.send_text("CONNECTION_OK")
-            logger.info("Sent CONNECTION_OK response")
-            
-            # Configure default Deepgram transcription options
-            options = TranscriptionOptions()
-            
-            # Create connection to Deepgram
-            dg_connection = deepgram.listen.live.v("1")
-            dg_connections[client_id] = dg_connection
-            
-            # Define event handlers
-            @dg_connection.on(LiveTranscriptionEvents.Transcript)
-            async def handle_transcript(transcript):
-                logger.debug(f"Received transcript from Deepgram: {json.dumps(transcript)}")
-                await websocket.send_text(json.dumps(transcript))
-            
-            @dg_connection.on(LiveTranscriptionEvents.Error)
-            async def handle_error(error):
-                logger.error(f"Deepgram error: {error}")
-                await websocket.send_text(json.dumps({"type": "error", "data": str(error)}))
-            
-            @dg_connection.on(LiveTranscriptionEvents.Close)
-            async def handle_close():
-                logger.info("Deepgram connection closed")
-                await websocket.send_text(json.dumps({"type": "close"}))
-            
-            # Start the connection with Deepgram
-            dg_opts = LiveOptions(
-                language=options.language,
-                model=options.model,
-                smart_format=options.smart_format,
-                interim_results=options.interim_results,
-                punctuate=options.punctuate,
-                diarize=options.diarize,
-                encoding=options.encoding,
-                channels=options.channels,
-                sample_rate=options.sample_rate,
-                utterances=options.utterances
-            )
-            
-            await dg_connection.start(dg_opts)
-            logger.info(f"Started Deepgram connection for client {client_id}")
-            
-            # Process incoming audio data
-            try:
-                while True:
-                    data = await websocket.receive_bytes()
-                    logger.debug(f"Received {len(data)} bytes of audio data")
-                    await dg_connection.send(data)
-            except WebSocketDisconnect:
-                logger.info(f"Client {client_id} disconnected")
-            finally:
-                # Clean up Deepgram connection
-                if client_id in dg_connections:
-                    await dg_connections[client_id].finish()
-                    del dg_connections[client_id]
-                    logger.info(f"Closed Deepgram connection for client {client_id}")
-        else:
-            logger.warning(f"Unexpected first message: {first_message}")
-            await websocket.send_text(json.dumps({"type": "error", "message": "Expected CONNECT_TEST"}))
+        # Create WebSocket connection to Deepgram
+        deepgram_socket = await deepgram.transcription.live({
+            'language': options.language,
+            'model': options.model,
+            'smart_format': options.smart_format,
+            'interim_results': options.interim_results,
+            'punctuate': options.punctuate,
+            'diarize': options.diarize,
+            'encoding': options.encoding,
+            'channels': options.channels,
+            'sample_rate': options.sample_rate,
+            'utterances': options.utterances
+        })
+        
+        dg_connections[client_id] = deepgram_socket
+        logger.info(f"Started Deepgram connection for client {client_id}")
+        
+        # Handle incoming transcriptions from Deepgram in background
+        async def process_transcriptions():
+            async for message in deepgram_socket:
+                logger.debug(f"Received transcript from Deepgram: {json.dumps(message)}")
+                await websocket.send_text(json.dumps(message))
+        
+        # Start processing transcriptions in background
+        transcription_task = asyncio.create_task(process_transcriptions())
+        
+        # Process incoming audio data
+        try:
+            while True:
+                data = await websocket.receive_bytes()
+                logger.debug(f"Received {len(data)} bytes of audio data")
+                deepgram_socket.send(data)
+        except WebSocketDisconnect:
+            logger.info(f"Client {client_id} disconnected")
+            transcription_task.cancel()
+        finally:
+            # Clean up Deepgram connection
+            if client_id in dg_connections:
+                deepgram_socket.close()
+                await deepgram_socket.wait_closed()
+                del dg_connections[client_id]
+                logger.info(f"Closed Deepgram connection for client {client_id}")
     
     except Exception as e:
         logger.error(f"Error in websocket connection: {str(e)}", exc_info=True)
