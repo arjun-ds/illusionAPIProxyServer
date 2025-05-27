@@ -62,10 +62,16 @@ def get_secret():
 # Get the Deepgram API key from AWS Secrets Manager
 print(f"DEEPGRAM DEBUG: Getting secret from AWS Secrets Manager...")
 try:
-    DEEPGRAM_API_KEY = get_secret()  # Secret is plaintext, not JSON
-    DEEPGRAM_API_KEY = DEEPGRAM_API_KEY.strip()  # Remove any whitespace
-    print(f"DEEPGRAM DEBUG: Retrieved API key length: {len(DEEPGRAM_API_KEY)}")
-    print(f"DEEPGRAM DEBUG: API key first 10 chars: {DEEPGRAM_API_KEY[:10]}...")
+    secret_string = get_secret()
+    print(f"DEEPGRAM DEBUG: Raw secret first 50 chars: {secret_string[:50]}...")
+    
+    # The secret IS JSON after all!
+    secret_data = json.loads(secret_string)
+    print(f"DEEPGRAM DEBUG: Available keys in secret: {list(secret_data.keys())}")
+    
+    DEEPGRAM_API_KEY = secret_data['DEEPGRAM_API_KEY']
+    print(f"DEEPGRAM DEBUG: Retrieved Deepgram API key length: {len(DEEPGRAM_API_KEY)}")
+    print(f"DEEPGRAM DEBUG: Deepgram API key first 10 chars: {DEEPGRAM_API_KEY[:10]}...")
 except Exception as e:
     print(f"DEEPGRAM DEBUG: Failed to get secret: {e}")
     raise ValueError(f"Failed to retrieve DEEPGRAM_API_KEY from AWS Secrets Manager: {e}")
