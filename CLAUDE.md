@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This project contains **two separate API proxy servers** designed for AWS App Runner:
 
-1. **Deepgram Service** (`deepgram_app.py`): WebSocket-based proxy for real-time speech recognition
-2. **ElevenLabs Service** (`elevenlabs_app.py`): HTTP REST proxy for text-to-speech conversion
+1. **Deepgram Service** (`deepgram/deepgram_app.py`): WebSocket-based proxy for real-time speech recognition
+2. **ElevenLabs Service** (`elevenlabs/elevenlabs_app.py`): HTTP REST proxy for text-to-speech conversion
 
 Both services act as secure intermediaries, handling API credentials server-side while providing client-compatible endpoints.
 
@@ -22,13 +22,10 @@ The project uses a Python virtual environment (venv) for dependency management.
 - **Install Dependencies**:
   ```bash
   # For Deepgram service
-  pip install -r requirements-deepgram.txt
+  cd deepgram && pip install -r requirements.txt
   
   # For ElevenLabs service  
-  pip install -r requirements-elevenlabs.txt
-  
-  # Or install both
-  pip install -r requirements-deepgram.txt -r requirements-elevenlabs.txt
+  cd elevenlabs && pip install -r requirements.txt
   ```
 
 ## Running the Applications
@@ -36,7 +33,7 @@ The project uses a Python virtual environment (venv) for dependency management.
 ### Deepgram Service (Speech-to-Text)
 - **Development Mode**:
   ```
-  python deepgram_app.py
+  cd deepgram && python deepgram_app.py
   ```
   Starts WebSocket server at http://localhost:8000
 
@@ -48,7 +45,7 @@ The project uses a Python virtual environment (venv) for dependency management.
 ### ElevenLabs Service (Text-to-Speech)
 - **Development Mode**:
   ```
-  python elevenlabs_app.py
+  cd elevenlabs && python elevenlabs_app.py
   ```
   Starts REST API server at http://localhost:8001
 
@@ -76,9 +73,8 @@ The project uses a Python virtual environment (venv) for dependency management.
 #### Step 1: Prepare Your Repository
 1. **Push this code** to a Git repository (GitHub, GitLab, or Bitbucket)
 2. **Ensure all files are present**:
-   - `deepgram_app.py` and `apprunner-deepgram.yaml` for Deepgram service
-   - `elevenlabs_app.py` and `apprunner-elevenlabs.yaml` for ElevenLabs service
-   - Corresponding `requirements-*.txt` files
+   - `deepgram/` folder with `deepgram_app.py`, `apprunner.yaml`, and `requirements.txt`
+   - `elevenlabs/` folder with `elevenlabs_app.py`, `apprunner.yaml`, and `requirements.txt`
 
 #### Step 2: Deploy Deepgram Service (Speech-to-Text)
 
@@ -92,7 +88,7 @@ The project uses a Python virtual environment (venv) for dependency management.
    - **Branch**: Select your main branch (usually `main` or `master`)
 4. **Build Configuration**:
    - **Configuration file**: Select "Use a configuration file"
-   - **Configuration file**: Enter `apprunner-deepgram.yaml`
+   - **Configuration file**: Enter `deepgram/apprunner.yaml`
 5. **Service Configuration**:
    - **Service name**: Enter a name like `deepgram-proxy-service`
    - **Virtual CPU**: 0.25 vCPU (sufficient for most use cases)
@@ -111,7 +107,7 @@ The project uses a Python virtual environment (venv) for dependency management.
 #### Step 3: Deploy ElevenLabs Service (Text-to-Speech)
 
 1. **Repeat the same process** but with these differences:
-   - **Configuration file**: Enter `apprunner-elevenlabs.yaml`
+   - **Configuration file**: Enter `elevenlabs/apprunner.yaml`
    - **Service name**: Enter a name like `elevenlabs-proxy-service`
    - **Environment Variables**:
      - **Key**: `ELEVENLABS_API_KEY`
@@ -150,17 +146,15 @@ ELEVENLABS_API_KEY=your_elevenlabs_key
 ## Key Components
 
 ### Deepgram Service Files
-- **deepgram_app.py**: WebSocket server for speech-to-text
-- **requirements-deepgram.txt**: Dependencies for Deepgram service
-- **apprunner-deepgram.yaml**: AWS App Runner configuration
-- **Dockerfile-deepgram**: Container definition
+- **deepgram/deepgram_app.py**: WebSocket server for speech-to-text
+- **deepgram/requirements.txt**: Dependencies for Deepgram service
+- **deepgram/apprunner.yaml**: AWS App Runner configuration
 - **client_example.py**: Example WebSocket client
 
 ### ElevenLabs Service Files  
-- **elevenlabs_app.py**: REST API server for text-to-speech
-- **requirements-elevenlabs.txt**: Dependencies for ElevenLabs service
-- **apprunner-elevenlabs.yaml**: AWS App Runner configuration
-- **Dockerfile-elevenlabs**: Container definition
+- **elevenlabs/elevenlabs_app.py**: REST API server for text-to-speech
+- **elevenlabs/requirements.txt**: Dependencies for ElevenLabs service
+- **elevenlabs/apprunner.yaml**: AWS App Runner configuration
 
 ### Client Integration Examples
 - **index.js**: React Native ElevenLabs integration (your existing implementation)
@@ -360,18 +354,18 @@ ws.onmessage = (event) => {
 
 ```
 /apiProxyServer/
-├── deepgram_app.py              # Speech-to-text WebSocket server
-├── elevenlabs_app.py            # Text-to-speech REST API server
-├── requirements-deepgram.txt    # Deepgram service dependencies
-├── requirements-elevenlabs.txt  # ElevenLabs service dependencies
-├── apprunner-deepgram.yaml      # Deepgram deployment config
-├── apprunner-elevenlabs.yaml    # ElevenLabs deployment config
-├── Dockerfile-deepgram          # Deepgram container definition
-├── Dockerfile-elevenlabs        # ElevenLabs container definition
-├── client_example.py            # Deepgram WebSocket test client
-├── test_client.py              # Alternative test client
-├── index.js                    # React Native ElevenLabs example
-└── CLAUDE.md                   # This documentation
+├── deepgram/
+│   ├── deepgram_app.py         # Speech-to-text WebSocket server
+│   ├── requirements.txt        # Deepgram service dependencies
+│   └── apprunner.yaml          # Deepgram deployment config
+├── elevenlabs/
+│   ├── elevenlabs_app.py       # Text-to-speech REST API server
+│   ├── requirements.txt        # ElevenLabs service dependencies
+│   └── apprunner.yaml          # ElevenLabs deployment config
+├── client_example.py           # Deepgram WebSocket test client
+├── test_client.py             # Alternative test client
+├── index.js                   # React Native ElevenLabs example
+└── CLAUDE.md                  # This documentation
 ```
 
 ## Implementation Status
