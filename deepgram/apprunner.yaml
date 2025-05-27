@@ -10,6 +10,4 @@ run:
   network:
     port: 8000
     env: PORT
-  env:
-    - name: DEEPGRAM_API_KEY
-      value: ${DEEPGRAM_API_KEY}
+  env: []

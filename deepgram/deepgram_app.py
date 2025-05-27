@@ -9,6 +9,8 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import boto3
+from botocore.exceptions import ClientError
 
 from deepgram import Deepgram
 
@@ -36,10 +38,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Get the Deepgram API key from environment variables (simplified like ElevenLabs)
-DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
-if not DEEPGRAM_API_KEY:
-    raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
+def get_secret():
+    secret_name = "illusion/prod/ai-keys"
+    region_name = "us-west-2"
+
+    # Create a Secrets Manager client
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=region_name
+    )
+
+    try:
+        get_secret_value_response = client.get_secret_value(
+            SecretId=secret_name
+        )
+    except ClientError as e:
+        raise e
+
+    secret = get_secret_value_response['SecretString']
+    return secret
+
+# Get the Deepgram API key from AWS Secrets Manager
+print(f"DEEPGRAM DEBUG: Getting secret from AWS Secrets Manager...")
+try:
+    DEEPGRAM_API_KEY = get_secret()  # Secret is plaintext, not JSON
+    DEEPGRAM_API_KEY = DEEPGRAM_API_KEY.strip()  # Remove any whitespace
+    print(f"DEEPGRAM DEBUG: Retrieved API key length: {len(DEEPGRAM_API_KEY)}")
+    print(f"DEEPGRAM DEBUG: API key first 10 chars: {DEEPGRAM_API_KEY[:10]}...")
+except Exception as e:
+    print(f"DEEPGRAM DEBUG: Failed to get secret: {e}")
+    raise ValueError(f"Failed to retrieve DEEPGRAM_API_KEY from AWS Secrets Manager: {e}")
 
 # Initialize Deepgram client
 print(f"DEEPGRAM DEBUG: Initializing Deepgram client...")
