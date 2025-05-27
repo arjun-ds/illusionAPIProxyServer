@@ -10,7 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from deepgram import DeepgramClient
+from deepgram import Deepgram
 
 from dotenv import load_dotenv
 
@@ -41,10 +41,10 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 if not DEEPGRAM_API_KEY:
     raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
 
-# Initialize Deepgram client using v2.x SDK pattern
+# Initialize Deepgram client
 print(f"DEEPGRAM DEBUG: Initializing Deepgram client...")
 try:
-    deepgram = DeepgramClient(DEEPGRAM_API_KEY)
+    deepgram = Deepgram(DEEPGRAM_API_KEY)
     print(f"DEEPGRAM DEBUG: Deepgram client initialized successfully")
 except Exception as e:
     print(f"DEEPGRAM DEBUG: Failed to initialize Deepgram: {e}")
@@ -94,11 +94,8 @@ async def websocket_endpoint(websocket: WebSocket):
         options.sample_rate = 44100
         options.channels = 1
         
-        # Create WebSocket connection to Deepgram using v2.x SDK
-        deepgram_socket = deepgram.listen.websocket.v("1")
-        
-        # Configure the connection
-        deepgram_options = {
+        # Create WebSocket connection to Deepgram
+        deepgram_socket = await deepgram.transcription.live({
             'language': options.language,
             'model': options.model,
             'smart_format': options.smart_format,
@@ -109,33 +106,19 @@ async def websocket_endpoint(websocket: WebSocket):
             'channels': options.channels,
             'sample_rate': options.sample_rate,
             'utterances': options.utterances
-        }
-        
-        # Start the connection
-        if not deepgram_socket.start(deepgram_options):
-            logger.error("Failed to start Deepgram connection")
-            await websocket.send_text(json.dumps({"type": "error", "message": "Failed to connect to Deepgram"}))
-            return
+        })
         
         dg_connections[client_id] = deepgram_socket
         logger.info(f"Started Deepgram connection for client {client_id}")
         
-        # Set up event handlers for Deepgram responses
-        def on_message(result, **kwargs):
-            logger.debug(f"Received transcript from Deepgram: {json.dumps(result)}")
-            asyncio.create_task(websocket.send_text(json.dumps(result)))
+        # Handle incoming transcriptions from Deepgram in background
+        async def process_transcriptions():
+            async for message in deepgram_socket:
+                logger.debug(f"Received transcript from Deepgram: {json.dumps(message)}")
+                await websocket.send_text(json.dumps(message))
         
-        def on_error(error, **kwargs):
-            logger.error(f"Deepgram error: {error}")
-            asyncio.create_task(websocket.send_text(json.dumps({"type": "error", "message": str(error)})))
-        
-        def on_close(close, **kwargs):
-            logger.info(f"Deepgram connection closed: {close}")
-        
-        # Register event handlers
-        deepgram_socket.on("Results", on_message)
-        deepgram_socket.on("Error", on_error)
-        deepgram_socket.on("Close", on_close)
+        # Start processing transcriptions in background
+        transcription_task = asyncio.create_task(process_transcriptions())
         
         # Process incoming audio data
         try:
@@ -145,10 +128,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 deepgram_socket.send(data)
         except WebSocketDisconnect:
             logger.info(f"Client {client_id} disconnected")
+            transcription_task.cancel()
         finally:
             # Clean up Deepgram connection
             if client_id in dg_connections:
-                deepgram_socket.finish()
+                deepgram_socket.close()
+                await deepgram_socket.wait_closed()
                 del dg_connections[client_id]
                 logger.info(f"Closed Deepgram connection for client {client_id}")
     
@@ -163,7 +148,7 @@ async def websocket_endpoint(websocket: WebSocket):
             del active_connections[client_id]
         if client_id in dg_connections:
             try:
-                dg_connections[client_id].finish()
+                await dg_connections[client_id].finish()
             except:
                 pass
             del dg_connections[client_id]
