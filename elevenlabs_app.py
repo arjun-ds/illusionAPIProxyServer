@@ -178,5 +178,5 @@ async def shutdown_event():
     await http_client.aclose()
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))  # Use 8000 to match App Runner configuration
+    port = int(os.getenv("PORT", 8001))  # Use 8001 to match Dockerfile
     uvicorn.run("elevenlabs_app:app", host="0.0.0.0", port=port, reload=False)
