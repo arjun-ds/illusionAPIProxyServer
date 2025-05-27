@@ -6,7 +6,9 @@
       "Bash(chmod:*)",
       "Bash(ls:*)",
       "Bash(mv:*)",
-      "Bash(python -m pip install:*)"
+      "Bash(python -m pip install:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)"
     ],
     "deny": []
   }
