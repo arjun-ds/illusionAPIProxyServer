@@ -96,52 +96,24 @@ if not DEEPGRAM_API_KEY:
 
 # Check if the value is an AWS Secrets Manager ARN
 if DEEPGRAM_API_KEY.startswith("arn:aws:secretsmanager:"):
+    print(f"DEEPGRAM DEBUG: Detected AWS Secrets Manager ARN")
     logger.info(f"Detected AWS Secrets Manager ARN: {DEEPGRAM_API_KEY}")
     try:
         DEEPGRAM_API_KEY = get_secret_value(DEEPGRAM_API_KEY)
-        logger.info(f"Successfully retrieved API key from Secrets Manager (length: {len(DEEPGRAM_API_KEY)})")
-        # Log first few characters for debugging (safe to log first few chars of API key)
-        logger.info(f"API key starts with: {DEEPGRAM_API_KEY[:8]}...")
+        print(f"DEEPGRAM DEBUG: Retrieved key length={len(DEEPGRAM_API_KEY)}, type={type(DEEPGRAM_API_KEY)}")
+        logger.info(f"Retrieved key: length={len(DEEPGRAM_API_KEY)}, type={type(DEEPGRAM_API_KEY)}")
     except Exception as e:
+        print(f"DEEPGRAM DEBUG: Failed to retrieve secret: {e}")
         logger.error(f"Failed to retrieve secret from AWS Secrets Manager: {e}")
         raise
 
 # Initialize Deepgram client
-logger.info("Initializing Deepgram client...")
+print(f"DEEPGRAM DEBUG: Initializing Deepgram client...")
 try:
-    # Strip any extra whitespace and ensure string type
-    api_key = str(DEEPGRAM_API_KEY).strip()
-    logger.info(f"API key length after strip: {len(api_key)}")
-    logger.info(f"API key first 10 chars: {api_key[:10]}...")
-    logger.info(f"API key is alphanumeric: {api_key.isalnum()}")
-    
-    # Try different initialization approaches
-    try:
-        # Try with dict config (some SDK versions expect this)
-        deepgram = Deepgram({"api_key": api_key})
-        logger.info("Deepgram client initialized successfully with dict config")
-    except:
-        # Try with direct string
-        deepgram = Deepgram(api_key)
-        logger.info("Deepgram client initialized successfully with string")
-        
+    deepgram = Deepgram(DEEPGRAM_API_KEY)
+    print(f"DEEPGRAM DEBUG: Deepgram client initialized successfully")
 except Exception as e:
-    logger.error(f"Failed to initialize Deepgram client: {e}")
-    logger.error(f"Error type: {type(e).__name__}")
-    logger.error(f"API key length: {len(DEEPGRAM_API_KEY)}")
-    logger.error(f"API key type: {type(DEEPGRAM_API_KEY)}")
-    
-    # Log API key format info
-    logger.info(f"API key format: {len(api_key)} characters, alphanumeric: {api_key.isalnum()}")
-    
-    # Try to give more specific error info
-    if "Invalid API key" in str(e):
-        logger.error("Deepgram SDK reports invalid API key")
-        logger.error("Please verify:")
-        logger.error("1. The API key in AWS Secrets Manager is correct")
-        logger.error("2. The API key is active in your Deepgram console")
-        logger.error("3. The API key has the necessary permissions")
-    
+    print(f"DEEPGRAM DEBUG: Failed to initialize Deepgram: {e}")
     raise
 
 # Store active websocket connections
@@ -169,6 +141,7 @@ async def root():
 async def health_check():
     """Health check endpoint for AWS App Runner"""
     return {"status": "healthy"}
+
 
 @app.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
