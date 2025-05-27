@@ -12,7 +12,7 @@ from pydantic import BaseModel
 import boto3
 from botocore.exceptions import ClientError
 
-from deepgram import Deepgram
+from deepgram import Deepgram, DeepgramClient
 
 from dotenv import load_dotenv
 
@@ -60,21 +60,29 @@ def get_secret_value(secret_name_or_arn: str) -> str:
         # Try to parse as JSON first
         try:
             secret_data = json.loads(secret_string)
+            logger.info(f"Secret is JSON with keys: {list(secret_data.keys())}")
             
             # Try different possible key names
-            possible_keys = ['DEEPGRAM_API_KEY', 'deepgram_api_key', 'api_key']
+            possible_keys = ['DEEPGRAM_API_KEY', 'deepgram_api_key', 'api_key', 'deepgram']
             for key in possible_keys:
                 if key in secret_data:
-                    return secret_data[key]
+                    logger.info(f"Found key '{key}' in secret")
+                    # Strip any whitespace from the API key
+                    api_key = secret_data[key].strip()
+                    return api_key
             
-            # If no specific key found, return the first value
+            # If no specific key found, log all keys and return the first value
             if len(secret_data) == 1:
+                first_key = list(secret_data.keys())[0]
+                logger.info(f"Using first key '{first_key}' from secret")
                 return list(secret_data.values())[0]
                 
+            logger.error(f"Available keys in secret: {list(secret_data.keys())}")
             raise ValueError(f"Could not find DEEPGRAM_API_KEY in secret {secret_name_or_arn}")
             
         except json.JSONDecodeError:
             # If it's not JSON, return the raw secret string
+            logger.info("Secret is not JSON, returning raw string")
             return secret_string
         
     except ClientError as e:
@@ -88,13 +96,39 @@ if not DEEPGRAM_API_KEY:
 
 # Check if the value is an AWS Secrets Manager ARN
 if DEEPGRAM_API_KEY.startswith("arn:aws:secretsmanager:"):
-    logger.info("Detected AWS Secrets Manager ARN, retrieving secret value")
-    DEEPGRAM_API_KEY = get_secret_value(DEEPGRAM_API_KEY)
-    
-logger.info("Successfully retrieved Deepgram API key")
+    logger.info(f"Detected AWS Secrets Manager ARN: {DEEPGRAM_API_KEY}")
+    try:
+        DEEPGRAM_API_KEY = get_secret_value(DEEPGRAM_API_KEY)
+        logger.info(f"Successfully retrieved API key from Secrets Manager (length: {len(DEEPGRAM_API_KEY)})")
+        # Log first few characters for debugging (safe to log first few chars of API key)
+        logger.info(f"API key starts with: {DEEPGRAM_API_KEY[:8]}...")
+    except Exception as e:
+        logger.error(f"Failed to retrieve secret from AWS Secrets Manager: {e}")
+        raise
 
-# Initialize Deepgram client
-deepgram = Deepgram(DEEPGRAM_API_KEY)
+# Initialize Deepgram client - try both initialization methods
+logger.info("Initializing Deepgram client...")
+deepgram = None
+try:
+    # Try the new SDK v2.x initialization method first
+    deepgram = DeepgramClient(DEEPGRAM_API_KEY)
+    logger.info("Deepgram client initialized successfully using DeepgramClient")
+except Exception as e1:
+    logger.warning(f"Failed with DeepgramClient: {e1}")
+    try:
+        # Fall back to legacy initialization
+        deepgram = Deepgram(DEEPGRAM_API_KEY)
+        logger.info("Deepgram client initialized successfully using legacy Deepgram class")
+    except Exception as e2:
+        logger.error(f"Failed to initialize Deepgram client with both methods")
+        logger.error(f"DeepgramClient error: {e1}")
+        logger.error(f"Legacy Deepgram error: {e2}")
+        logger.error(f"API key length: {len(DEEPGRAM_API_KEY)}")
+        logger.error(f"API key type: {type(DEEPGRAM_API_KEY)}")
+        # Check if the API key looks like a valid Deepgram key
+        if not DEEPGRAM_API_KEY.startswith(('DG.', 'dg.', 'sk_', 'pk_')):
+            logger.error("API key does not start with expected Deepgram prefix (DG., dg., sk_, or pk_)")
+        raise e2
 
 # Store active websocket connections
 active_connections: Dict[str, WebSocket] = {}
