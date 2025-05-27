@@ -1,4 +1,4 @@
-deepgram-sdk>=3.3.0,<4.0.0
+deepgram-sdk>=2.12.0,<3.0.0
 fastapi>=0.100.0,<0.115.0
 websockets>=12.0,<14.0
 uvicorn[standard]>=0.23.0,<0.30.0
