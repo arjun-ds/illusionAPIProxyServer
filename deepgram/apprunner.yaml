@@ -3,10 +3,10 @@ runtime: python311
 build:
   commands:
     build:
-      - pip install -r requirements.txt
+      - pip3 install -r requirements.txt
 run:
   runtime-version: 3.11.12
-  command: python deepgram_app.py
+  command: python3 deepgram_app.py
   network:
     port: 8000
     env: PORT
