@@ -1,12 +1,12 @@
 version: 1.0
-runtime: python31
+runtime: docker
 build:
   commands:
     build:
-      - pip install -r requirements-elevenlabs.txt
+      - echo Building ElevenLabs service with Docker
 run:
-  runtime-version: 3.10.8
-  command: python elevenlabs_app.py
+  runtime-version: latest
+  command: ""
   network:
     port: 8001
     env: PORT
@@ -15,5 +15,4 @@ run:
       value: ${ELEVENLABS_API_KEY}
     - name: PORT
       value: 8001
-    - name: LOG_LEVEL
-      value: INFO
+  dockerfile: Dockerfile-elevenlabs
