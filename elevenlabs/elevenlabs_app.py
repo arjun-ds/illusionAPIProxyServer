@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 import logging
 from typing import Optional
 
@@ -10,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import boto3
+from botocore.exceptions import ClientError
 
 # Load environment variables
 load_dotenv()
@@ -33,10 +36,49 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Get the ElevenLabs API key from environment variables
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-if not ELEVENLABS_API_KEY:
-    raise ValueError("ELEVENLABS_API_KEY environment variable is not set")
+def get_secret():
+    secret_name = "illusion/prod/ai-keys"
+    region_name = "us-west-2"
+
+    # Create a Secrets Manager client
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=region_name
+    )
+
+    try:
+        get_secret_value_response = client.get_secret_value(
+            SecretId=secret_name
+        )
+    except ClientError as e:
+        raise e
+
+    secret = get_secret_value_response['SecretString']
+    return secret
+
+# Get the ElevenLabs API key from AWS Secrets Manager
+logger.info("Getting secret from AWS Secrets Manager...")
+try:
+    secret_string = get_secret()
+    logger.info(f"Raw secret first 50 chars: {secret_string[:50]}...")
+    
+    # Parse the JSON secret
+    secret_data = json.loads(secret_string)
+    logger.info(f"Available keys in secret: {list(secret_data.keys())}")
+    
+    ELEVENLABS_API_KEY = secret_data.get('ELEVENLABS_API_KEY')
+    if not ELEVENLABS_API_KEY:
+        raise ValueError("ELEVENLABS_API_KEY not found in secret")
+    
+    logger.info(f"Retrieved ElevenLabs API key length: {len(ELEVENLABS_API_KEY)}")
+    logger.info(f"ElevenLabs API key first 10 chars: {ELEVENLABS_API_KEY[:10]}...")
+except Exception as e:
+    logger.error(f"Failed to get secret: {e}")
+    # Fall back to environment variable if AWS Secrets Manager fails
+    ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+    if not ELEVENLABS_API_KEY:
+        raise ValueError(f"Failed to retrieve ELEVENLABS_API_KEY from AWS Secrets Manager and env var: {e}")
 
 # ElevenLabs API base URL
 ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
