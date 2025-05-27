@@ -41,30 +41,45 @@ app.add_middleware(
 def get_secret_value(secret_name_or_arn: str) -> str:
     """Retrieve secret from AWS Secrets Manager"""
     try:
-        session = boto3.Session()
-        client = session.client('secretsmanager')
+        # Extract region from ARN or use default
+        region_name = "us-west-2"  # Default region
+        if secret_name_or_arn.startswith("arn:aws:secretsmanager:"):
+            # Extract region from ARN: arn:aws:secretsmanager:REGION:...
+            region_name = secret_name_or_arn.split(":")[3]
+        
+        # Create a Secrets Manager client with explicit region
+        session = boto3.session.Session()
+        client = session.client(
+            service_name='secretsmanager',
+            region_name=region_name
+        )
         
         response = client.get_secret_value(SecretId=secret_name_or_arn)
-        secret_data = json.loads(response['SecretString'])
+        secret_string = response['SecretString']
         
-        # Try different possible key names
-        possible_keys = ['DEEPGRAM_API_KEY', 'deepgram_api_key', 'api_key']
-        for key in possible_keys:
-            if key in secret_data:
-                return secret_data[key]
-        
-        # If no specific key found, return the first value
-        if len(secret_data) == 1:
-            return list(secret_data.values())[0]
+        # Try to parse as JSON first
+        try:
+            secret_data = json.loads(secret_string)
             
-        raise ValueError(f"Could not find DEEPGRAM_API_KEY in secret {secret_name_or_arn}")
+            # Try different possible key names
+            possible_keys = ['DEEPGRAM_API_KEY', 'deepgram_api_key', 'api_key']
+            for key in possible_keys:
+                if key in secret_data:
+                    return secret_data[key]
+            
+            # If no specific key found, return the first value
+            if len(secret_data) == 1:
+                return list(secret_data.values())[0]
+                
+            raise ValueError(f"Could not find DEEPGRAM_API_KEY in secret {secret_name_or_arn}")
+            
+        except json.JSONDecodeError:
+            # If it's not JSON, return the raw secret string
+            return secret_string
         
     except ClientError as e:
         logger.error(f"Error retrieving secret {secret_name_or_arn}: {e}")
         raise
-    except json.JSONDecodeError:
-        # If it's not JSON, return the raw secret string
-        return response['SecretString']
 
 # Get the Deepgram API key from environment variables
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
