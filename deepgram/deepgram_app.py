@@ -113,22 +113,34 @@ try:
     api_key = str(DEEPGRAM_API_KEY).strip()
     logger.info(f"API key length after strip: {len(api_key)}")
     logger.info(f"API key first 10 chars: {api_key[:10]}...")
+    logger.info(f"API key is alphanumeric: {api_key.isalnum()}")
     
-    deepgram = Deepgram(api_key)
-    logger.info("Deepgram client initialized successfully")
+    # Try different initialization approaches
+    try:
+        # Try with dict config (some SDK versions expect this)
+        deepgram = Deepgram({"api_key": api_key})
+        logger.info("Deepgram client initialized successfully with dict config")
+    except:
+        # Try with direct string
+        deepgram = Deepgram(api_key)
+        logger.info("Deepgram client initialized successfully with string")
+        
 except Exception as e:
     logger.error(f"Failed to initialize Deepgram client: {e}")
     logger.error(f"Error type: {type(e).__name__}")
     logger.error(f"API key length: {len(DEEPGRAM_API_KEY)}")
     logger.error(f"API key type: {type(DEEPGRAM_API_KEY)}")
     
-    # Check if the API key looks like a valid Deepgram key
-    if not DEEPGRAM_API_KEY.startswith(('DG.', 'dg.', 'sk_', 'pk_')):
-        logger.error("API key does not start with expected Deepgram prefix (DG., dg., sk_, or pk_)")
+    # Log API key format info
+    logger.info(f"API key format: {len(api_key)} characters, alphanumeric: {api_key.isalnum()}")
     
     # Try to give more specific error info
     if "Invalid API key" in str(e):
-        logger.error("Deepgram SDK reports invalid API key - check if key is correct in AWS Secrets Manager")
+        logger.error("Deepgram SDK reports invalid API key")
+        logger.error("Please verify:")
+        logger.error("1. The API key in AWS Secrets Manager is correct")
+        logger.error("2. The API key is active in your Deepgram console")
+        logger.error("3. The API key has the necessary permissions")
     
     raise
 
