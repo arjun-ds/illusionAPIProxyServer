@@ -1,0 +1,18 @@
+version: 1.0
+runtime: docker
+build:
+  commands:
+    build:
+      - echo Building Deepgram service with Docker
+run:
+  runtime-version: latest
+  command: ""
+  network:
+    port: 8000
+    env: PORT
+  env:
+    - name: DEEPGRAM_API_KEY
+      value: ${DEEPGRAM_API_KEY}
+    - name: PORT
+      value: 8000
+  dockerfile: Dockerfile

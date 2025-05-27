@@ -1,0 +1,18 @@
+version: 1.0
+runtime: docker
+build:
+  commands:
+    build:
+      - echo Building ElevenLabs service with Docker
+run:
+  runtime-version: latest
+  command: ""
+  network:
+    port: 8001
+    env: PORT
+  env:
+    - name: ELEVENLABS_API_KEY
+      value: ${ELEVENLABS_API_KEY}
+    - name: PORT
+      value: 8001
+  dockerfile: Dockerfile

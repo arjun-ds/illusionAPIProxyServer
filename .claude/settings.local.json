@@ -8,7 +8,9 @@
       "Bash(mv:*)",
       "Bash(python -m pip install:*)",
       "Bash(grep:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)"
     ],
     "deny": []
   }
