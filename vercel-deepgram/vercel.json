@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/deepgram-proxy.js": {
+      "maxDuration": 300
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/api/deepgram-proxy"
+    }
+  ]
+}

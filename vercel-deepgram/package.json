@@ -1,0 +1,22 @@
+{
+  "name": "deepgram-websocket-proxy",
+  "version": "1.0.0",
+  "description": "WebSocket proxy for Deepgram API using Vercel Edge Functions",
+  "main": "api/deepgram-proxy.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "keywords": [
+    "deepgram",
+    "websocket",
+    "proxy",
+    "vercel",
+    "edge-functions"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "vercel": "^32.0.0"
+  }
+}

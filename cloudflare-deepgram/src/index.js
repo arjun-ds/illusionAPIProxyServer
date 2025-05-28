@@ -31,6 +31,9 @@ export default {
       console.error('DEEPGRAM_API_KEY not configured');
       return new Response('Server configuration error', { status: 500 });
     }
+    
+    // Log that we have an API key (without exposing it)
+    console.log('DEEPGRAM_API_KEY is configured:', DEEPGRAM_API_KEY.substring(0, 8) + '...');
 
     // Create WebSocket pair for client
     const webSocketPair = new WebSocketPair();
@@ -40,20 +43,24 @@ export default {
     server.accept();
 
     // Create connection to Deepgram
-    // Deepgram accepts API key as a query parameter for WebSocket connections
-    const deepgramUrl = new URL('wss://api.deepgram.com/v1/listen');
-    deepgramUrl.searchParams.set('token', DEEPGRAM_API_KEY);
-    deepgramUrl.searchParams.set('model', 'nova-2');
-    deepgramUrl.searchParams.set('encoding', 'linear16');
-    deepgramUrl.searchParams.set('sample_rate', '44100');
-    deepgramUrl.searchParams.set('channels', '1');
-    deepgramUrl.searchParams.set('punctuate', 'true');
-    deepgramUrl.searchParams.set('utterances', 'true');
-    deepgramUrl.searchParams.set('smart_format', 'true');
-    deepgramUrl.searchParams.set('interim_results', 'true');
+    // Build URL with all parameters including token
+    const deepgramWsUrl = `wss://api.deepgram.com/v1/listen?token=${DEEPGRAM_API_KEY}&encoding=linear16&sample_rate=44100&channels=1&model=nova-2`;
 
-    // Create WebSocket without headers (not supported in Cloudflare Workers)
-    const deepgramWs = new WebSocket(deepgramUrl.toString());
+    // Log the URL (without the token for security)
+    console.log('Connecting to Deepgram WebSocket:', deepgramWsUrl.replace(DEEPGRAM_API_KEY, 'REDACTED'));
+    
+    let deepgramWs;
+    try {
+      // Create WebSocket without headers (not supported in Cloudflare Workers)
+      deepgramWs = new WebSocket(deepgramWsUrl);
+    } catch (err) {
+      console.error('Failed to create Deepgram WebSocket:', err.message || err);
+      server.close(1011, 'Failed to connect to Deepgram');
+      return new Response(null, {
+        status: 101,
+        webSocket: client,
+      });
+    }
 
     // Handle connection state
     let deepgramConnected = false;

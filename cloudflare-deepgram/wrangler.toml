@@ -6,5 +6,6 @@ compatibility_date = "2024-01-01"
 # account_id = "your_account_id"
 
 # The secret will be set via wrangler secret command
-# [vars]
-# DEEPGRAM_API_KEY = "set via wrangler secret"
+# Uncomment below if using plain text environment variable instead of secret
+[vars]
+# DEEPGRAM_API_KEY will be read from Cloudflare dashboard environment variables
