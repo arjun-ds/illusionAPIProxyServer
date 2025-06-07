@@ -1,0 +1,104 @@
+// File was for elevenlabs proxy attempt through AWS Lambda functions earlier on in the quarter
+// index.mjs
+import https from 'https';
+console.log('🔔 ElevenLabsProxy Lambda loaded');
+
+export const handler = async (event) => {
+  console.log('🔔 Handler invoked, pathParameters =', JSON.stringify(event.pathParameters));
+
+  const proxyParam = event.pathParameters?.proxy || '';
+  const isGet = event.httpMethod === 'GET';
+  const elePath = `/v1/${proxyParam}`;
+  console.log(`Forwarding ${event.httpMethod} to ElevenLabs: ${elePath}`);
+
+  try {
+    const options = {
+      hostname: 'api.elevenlabs.io',
+      path: elePath,
+      method: event.httpMethod,
+      headers: {
+        'xi-api-key': process.env.ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json',
+        Accept: isGet ? 'application/json' : 'audio/mpeg',
+      },
+    };
+
+    return await new Promise((resolve, reject) => {
+      const req = https.request(options, (res) => {
+        console.log('Status from ElevenLabs:', res.statusCode);
+        console.log('Content-Type from ElevenLabs:', res.headers['content-type']);
+
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => {
+          const bodyBuffer = Buffer.concat(chunks);
+          
+          // Only log the body as error if it's not an MP3/audio response
+          if (res.statusCode >= 400) {
+            // This is an actual error response
+            try {
+              // Try to parse as JSON for readable error message
+              const errorText = bodyBuffer.toString('utf8');
+              console.error('ElevenLabs returned error:', errorText);
+              
+              // Try to parse as JSON for more structured logging
+              try {
+                const errorJson = JSON.parse(errorText);
+                console.error('ElevenLabs error details:', JSON.stringify(errorJson));
+              } catch (e) {
+                // Not JSON, which is fine
+              }
+            } catch (e) {
+              console.error('Failed to decode error response:', e);
+            }
+          } else if (res.headers['content-type'].includes('application/json')) {
+            // For JSON responses, log a summary
+            try {
+              const jsonResponse = JSON.parse(bodyBuffer.toString('utf8'));
+              console.log('ElevenLabs JSON response summary:', 
+                JSON.stringify(jsonResponse).substring(0, 200) + '...');
+            } catch (e) {
+              console.log('Could not parse JSON response');
+            }
+          } else if (res.headers['content-type'].includes('audio/')) {
+            // For audio responses, just log the size
+            console.log(`ElevenLabs returned ${bodyBuffer.length} bytes of audio data`);
+          }
+          
+          resolve({
+            statusCode: res.statusCode,
+            headers: { 'Content-Type': res.headers['content-type'] },
+            body: bodyBuffer.toString('base64'),
+            isBase64Encoded: true,
+          });
+        });
+      });
+
+      req.on('error', err => {
+        console.error('Request error →', err);
+        reject(err);
+      });
+
+      // forward request body if present
+      const payload = event.isBase64Encoded
+        ? Buffer.from(event.body || '', 'base64')
+        : event.body;
+        
+      if (payload) {
+        console.log('Request payload summary:', typeof payload === 'string' 
+          ? payload.substring(0, 100) + '...' 
+          : 'Binary data');
+        req.write(payload);
+      }
+
+      req.end();
+    });
+  } catch (err) {
+    console.error('❌ Top-level handler error:', err);
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: err.message }),
+    };
+  }
+};
