@@ -1,0 +1,204 @@
+// This file was an attempt at getting a deepgram connection through AWS Lambda earlier on in the quarter
+// index.mjs - Deepgram WebSocket Proxy with fixed API Gateway parameter names
+import { DynamoDBClient, PutItemCommand, DeleteItemCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
+import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
+import WebSocket from 'ws';
+
+// ===== Configuration =====
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
+const CONNECTIONS_TABLE = process.env.CONNECTIONS_TABLE || 'DeepgramConnections';
+// Keep all the original query parameters from the Deepgram URL
+const DEEPGRAM_BASE_URL = 'wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=44100&channels=1&punctuate=true&utterances=true';
+
+// ===== Initialize Clients =====
+const ddbClient = new DynamoDBClient({});
+
+// Map to store active Deepgram connections in-memory
+// (This supplements DynamoDB for the immediate WebSocket references)
+const deepgramConnections = {};
+
+console.log('🔔 DeepgramWebSocketProxy Lambda loaded');
+
+// ===== Main Handler =====
+export const handler = async (event, context) => {
+  console.log('🔔 Handler invoked: ', JSON.stringify({
+    routeKey: event.requestContext?.routeKey,
+    connectionId: event.requestContext?.connectionId,
+  }));
+
+  // Extract API Gateway endpoint for sending messages back to clients
+  const domain = event.requestContext.domainName;
+  const stage = event.requestContext.stage;
+  const endpoint = `https://${domain}/${stage}`;
+  const apigwManagementApi = new ApiGatewayManagementApiClient({
+    endpoint: endpoint
+  });
+
+  try {
+    // Handle different WebSocket route types
+    switch (event.requestContext.routeKey) {
+      case '$connect':
+        return handleConnect(event, apigwManagementApi);
+      
+      case '$disconnect':
+        return handleDisconnect(event, apigwManagementApi);
+      
+      case '$default':
+        return handleMessage(event, apigwManagementApi);
+      
+      default:
+        console.warn(`⚠️ Unknown route: ${event.requestContext.routeKey}`);
+        return { statusCode: 400, body: 'Unknown route' };
+    }
+  } catch (err) {
+    console.error('❌ Error handling event:', err);
+    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+  }
+};
+
+// ===== Connection Handler =====
+async function handleConnect(event, apigwManagementApi) {
+  const connectionId = event.requestContext.connectionId;
+  console.log(`🔌 CLIENT CONNECTED: ${connectionId} at ${new Date().toISOString()}`);
+
+  try {
+    // Using native DynamoDB client with explicit attribute types
+    // Notice the space after "connectionId " - matching the table definition exactly
+    await ddbClient.send(new PutItemCommand({
+      TableName: CONNECTIONS_TABLE,
+      Item: {
+        "connectionId ": { S: connectionId },  // Note the space after connectionId
+        timestamp: { N: Date.now().toString() },
+        ttl: { N: Math.floor(Date.now() / 1000 + 3600 * 2).toString() }
+      }
+    }));
+    console.log(`🔍 DETAILED CONNECTION DEBUG - Full event: ${JSON.stringify(event)}`);
+    console.log(`🔍 DETAILED CONNECTION DEBUG - Headers: ${JSON.stringify(event.headers || {})}`);
+    console.log(`🔍 DETAILED CONNECTION DEBUG - Query params: ${JSON.stringify(event.queryStringParameters || {})}`);
+    
+    // Try to send a welcome message - FIXED parameter name for API Gateway
+    try {
+      await apigwManagementApi.send(new PostToConnectionCommand({
+        ConnectionId: connectionId,  // FIXED: Capital C in ConnectionId for API Gateway
+        Data: JSON.stringify({ type: "welcome", message: "WebSocket connection established" })
+      }));
+      console.log(`👋 Sent welcome message to ${connectionId}`);
+    } catch (err) {
+      console.warn(`⚠️ Could not send welcome message: ${err.message}`);
+    }
+    
+    console.log(`✅ Connection stored in DynamoDB: ${connectionId}`);
+    return { statusCode: 200, body: 'Connected' };
+  } catch (err) {
+    console.error(`❌ Error during connection for ${connectionId}:`, err);
+    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+  }
+}
+
+// ===== Disconnection Handler =====
+async function handleDisconnect(event, apigwManagementApi) {
+  const connectionId = event.requestContext.connectionId;
+  console.log(`🔌 CLIENT DISCONNECTED: ${connectionId} at ${new Date().toISOString()}`);
+
+  try {
+    // Clean up Deepgram connection if it exists
+    if (deepgramConnections[connectionId]) {
+      try {
+        deepgramConnections[connectionId].terminate();
+        console.log(`🔌 Deepgram connection terminated for client: ${connectionId}`);
+      } catch (err) {
+        console.error(`Error terminating Deepgram connection: ${err}`);
+      }
+      delete deepgramConnections[connectionId];
+    }
+
+    // Delete the connection from DynamoDB using native client
+    await ddbClient.send(new DeleteItemCommand({
+      TableName: CONNECTIONS_TABLE,
+      Key: { 
+        "connectionId ": { S: connectionId }  // Note the space after connectionId
+      }
+    }));
+
+    console.log(`🧹 Connection cleaned up in DynamoDB: ${connectionId}`);
+    return { statusCode: 200, body: 'Disconnected' };
+  } catch (err) {
+    console.error(`❌ Error during disconnection for ${connectionId}:`, err);
+    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+  }
+}
+
+// ===== Message Handler =====
+async function handleMessage(event, apigwManagementApi) {
+  const connectionId = event.requestContext.connectionId;
+  const isBase64 = event.isBase64Encoded;
+  console.log(`🎤 INCOMING MESSAGE: connectionId=${connectionId}, isBase64=${isBase64}, body length=${event.body?.length}`);
+
+  // Decode payload
+  const msgData = isBase64
+    ? Buffer.from(event.body, 'base64')
+    : event.body;
+
+  if (isBase64) {
+    console.log(`🎤 Processing binary audio data: ${msgData.length} bytes`);
+    console.log(`🔍 SAMPLE HEX: ${msgData.slice(0, Math.min(20, msgData.length)).toString('hex')}`);
+  } else {
+    console.log(`🎤 Processing text data: ${typeof msgData === 'string' ? msgData.length : 'unknown'} bytes`);
+  }
+
+  try {
+    // Verify client still exists
+    const connectionRecord = await ddbClient.send(new GetItemCommand({
+      TableName: process.env.CONNECTIONS_TABLE,
+      Key: {
+        "connectionId ": { S: connectionId }  // matches your table
+      }
+    }));
+    if (!connectionRecord.Item) {
+      console.warn(`⚠️ Connection not found in DynamoDB: ${connectionId}`);
+      return { statusCode: 400, body: 'Connection not found' };
+    }
+
+    // Establish Deepgram WS if missing
+    if (!deepgramConnections[connectionId]) {
+      console.log(`Creating new Deepgram connection for client: ${connectionId}`);
+      const dgWs = new WebSocket(
+        `${process.env.DEEPGRAM_BASE_URL}`, 
+        { headers: { 'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}` } }
+      );
+      deepgramConnections[connectionId] = dgWs;
+
+      dgWs.on('open',   () => console.log(`🔗 DEEPGRAM CONNECTED for ${connectionId}`));
+      dgWs.on('error',  err => console.error(`❌ DEEPGRAM ERROR for ${connectionId}:`, err));
+      dgWs.on('close',  (code, reason) => {
+        console.log(`DEEPGRAM DISCONNECTED for ${connectionId}: Code=${code}, Reason=${reason}`);
+        delete deepgramConnections[connectionId];
+      });
+      dgWs.on('message', async (data) => {
+        // ... your existing on-message handler ...
+      });
+
+      // ── QUICK FIX: wait 500 ms for handshake instead of polling indefinitely
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    // Forward the client payload to Deepgram
+    const dgWs = deepgramConnections[connectionId];
+    if (dgWs.readyState === WebSocket.OPEN) {
+      const isBinary = isBase64 || Buffer.isBuffer(msgData);
+      console.log(`⏩ FORWARDING TO DEEPGRAM: ${msgData.length} bytes (binary=${isBinary})`);
+      dgWs.send(msgData, { binary: isBinary }, err => {
+        if (err) console.error(`Error sending to Deepgram:`, err);
+        else       console.log(`✅ AUDIO DATA SENT to Deepgram for ${connectionId}`);
+      });
+    } else {
+      console.warn(`⚠️ Deepgram socket not open (state=${dgWs.readyState}), cleaning up`);
+      delete deepgramConnections[connectionId];
+    }
+
+    return { statusCode: 200, body: 'Message processed' };
+  } catch (err) {
+    console.error(`❌ Error in handleMessage for ${connectionId}:`, err);
+    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+  }
+}
